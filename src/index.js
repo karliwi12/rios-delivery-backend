@@ -21,9 +21,26 @@ import emailService from './services/email.service.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 3001)
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173'
+const DEFAULT_CLIENT_ORIGINS = [
+  'http://localhost:5173',
+  'https://rios-delivery.web.app',
+  'https://rios-delivery.firebaseapp.com',
+]
+const CLIENT_ORIGINS = (process.env.CLIENT_ORIGIN || DEFAULT_CLIENT_ORIGINS.join(','))
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean)
 
-app.use(cors({ origin: CLIENT_ORIGIN }))
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || CLIENT_ORIGINS.includes(origin)) {
+      callback(null, true)
+      return
+    }
+
+    callback(new Error(`Origen no permitido por CORS: ${origin}`))
+  }
+}))
 app.use(express.json({ limit: '20mb' }))
 
 const MAX_CERTIFICADO_SIZE_BYTES = 10 * 1024 * 1024
@@ -59,6 +76,69 @@ const getCertificadoLocalUrl = (fileName) => {
 const isMissingStorageBucketError = (error) => {
   const details = `${error?.message || ''} ${error?.response?.body || ''} ${JSON.stringify(error?.errors || [])}`
   return (error?.code === 404 || error?.response?.statusCode === 404) && /bucket|specified bucket|not exist/i.test(details)
+}
+
+const normalizeServiceAccount = (serviceAccount) => {
+  if (!serviceAccount) return null
+
+  return {
+    ...serviceAccount,
+    private_key: typeof serviceAccount.private_key === 'string'
+      ? serviceAccount.private_key.replace(/\\n/g, '\n')
+      : serviceAccount.private_key,
+  }
+}
+
+const parseServiceAccountJson = (rawValue, source) => {
+  if (!rawValue) return null
+
+  try {
+    return normalizeServiceAccount(JSON.parse(rawValue))
+  } catch (error) {
+    throw new Error(`No se pudo leer ${source} como JSON válido: ${error.message}`)
+  }
+}
+
+const resolveServiceAccountPath = (serviceAccountPath) => {
+  if (!serviceAccountPath) return null
+  if (path.isAbsolute(serviceAccountPath)) return serviceAccountPath
+
+  const cwdPath = path.resolve(process.cwd(), serviceAccountPath)
+  if (fs.existsSync(cwdPath)) return cwdPath
+
+  return path.resolve(BACKEND_ROOT, serviceAccountPath)
+}
+
+const getServiceAccountCredentials = () => {
+  const jsonCredentials = parseServiceAccountJson(
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
+    'FIREBASE_SERVICE_ACCOUNT_JSON'
+  )
+  if (jsonCredentials) {
+    console.log('Firebase Admin SDK usará FIREBASE_SERVICE_ACCOUNT_JSON')
+    return jsonCredentials
+  }
+
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
+    const decoded = Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8')
+    console.log('Firebase Admin SDK usará FIREBASE_SERVICE_ACCOUNT_BASE64')
+    return parseServiceAccountJson(decoded, 'FIREBASE_SERVICE_ACCOUNT_BASE64')
+  }
+
+  const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH
+    || process.env.FIREBASE_SERVICE_ACCOUNT_KEY_PATH
+    || process.env.GOOGLE_APPLICATION_CREDENTIALS
+
+  const resolvedPath = resolveServiceAccountPath(serviceAccountPath)
+  if (!resolvedPath) return null
+
+  console.log(`Buscando service account en: ${resolvedPath}`)
+  if (!fs.existsSync(resolvedPath)) {
+    console.warn(`Service account no encontrado en: ${resolvedPath}`)
+    return null
+  }
+
+  return normalizeServiceAccount(JSON.parse(fs.readFileSync(resolvedPath, 'utf8')))
 }
 
 const guardarCertificadoEmpresaLocal = async ({ nombre, tipo, buffer, fileName, lote = {} }) => {
@@ -190,36 +270,22 @@ function initializeFirebaseAdmin() {
       return admin.firestore()
     }
 
-    // Usar service account si está disponible
-    let serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH
-    
-    if (serviceAccountPath) {
-      // Resolver path relativo a partir del directorio del proyecto backend
-      if (!path.isAbsolute(serviceAccountPath)) {
-        serviceAccountPath = path.resolve(process.cwd(), serviceAccountPath)
-      }
-      
-      console.log(`📁 Buscando service account en: ${serviceAccountPath}`)
-      
-      if (fs.existsSync(serviceAccountPath)) {
-        const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'))
-        
-        admin.initializeApp({
-          credential: admin.credential.cert(serviceAccount),
-          projectId: serviceAccount.project_id,
-          storageBucket: process.env.FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket,
-        })
-        
-        console.log('✓ Firebase Admin SDK inicializado con service account')
-        return admin.firestore()
-      } else {
-        console.warn(`⚠️ Service account no encontrado en: ${serviceAccountPath}`)
-      }
+    const serviceAccount = getServiceAccountCredentials()
+
+    if (serviceAccount) {
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        projectId: process.env.FIREBASE_PROJECT_ID || serviceAccount.project_id || firebaseConfig.projectId,
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket,
+      })
+
+      console.log('Firebase Admin SDK inicializado con service account')
+      return admin.firestore()
     }
-    
     // Fallback: usar GOOGLE_APPLICATION_CREDENTIALS (automático)
+    console.warn('Firebase Admin SDK se inicializará con credenciales por defecto del entorno')
     admin.initializeApp({
-      projectId: process.env.FIREBASE_PROJECT_ID || 'rios-delivery',
+      projectId: process.env.FIREBASE_PROJECT_ID || firebaseConfig.projectId,
       storageBucket: process.env.FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket,
     })
     
@@ -633,7 +699,7 @@ async function iniciar() {
     return await new Promise((resolve, reject) => {
       const server = app.listen(PORT, () => {
         console.log(`Servidor ejecutandose en puerto ${PORT}`)
-        console.log(`CORS habilitado para ${CLIENT_ORIGIN}`)
+        console.log(`CORS habilitado para ${CLIENT_ORIGINS.join(', ')}`)
         resolve(server)
       })
 
