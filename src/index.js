@@ -93,6 +93,7 @@ const parseServiceAccountJson = (rawValue, source) => {
   if (!rawValue) return null
 
   try {
+
     return normalizeServiceAccount(JSON.parse(rawValue))
   } catch (error) {
     throw new Error(`No se pudo leer ${source} como JSON válido: ${error.message}`)
@@ -264,32 +265,23 @@ let db
 
 function initializeFirebaseAdmin() {
   try {
-    // Si ya está inicializado, retorna la instancia
     if (admin.apps && admin.apps.length > 0) {
       console.log('✓ Firebase Admin SDK ya estaba inicializado')
       return admin.firestore()
     }
 
-    const serviceAccount = getServiceAccountCredentials()
-
-    if (serviceAccount) {
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        projectId: process.env.FIREBASE_PROJECT_ID || serviceAccount.project_id || firebaseConfig.projectId,
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket,
-      })
-
-      console.log('Firebase Admin SDK inicializado con service account')
-      return admin.firestore()
-    }
-    // Fallback: usar GOOGLE_APPLICATION_CREDENTIALS (automático)
-    console.warn('Firebase Admin SDK se inicializará con credenciales por defecto del entorno')
-    admin.initializeApp({
-      projectId: process.env.FIREBASE_PROJECT_ID || firebaseConfig.projectId,
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket,
-    })
+    console.log('ENV GOOGLE_SERVICE_ACCOUNT_JSON:', process.env.GOOGLE_SERVICE_ACCOUNT_JSON ? 'EXISTE' : 'NO EXISTE')
+    console.log('Longitud JSON:', process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.length)
     
-    console.log('✓ Firebase Admin SDK inicializado con credenciales del entorno')
+    const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON)
+
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      projectId: serviceAccount.project_id,
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET
+    })
+
+    console.log('🔥 Firebase Admin inicializado con credenciales de Render')
     return admin.firestore()
   } catch (error) {
     console.error('✗ Error inicializando Firebase Admin SDK:', error.message)
