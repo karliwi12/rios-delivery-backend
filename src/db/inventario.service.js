@@ -148,8 +148,8 @@ class InventarioService {
           (hoy - fechaIngreso) / (1000 * 60 * 60 * 24)
         )
 
-        // Si pasaron 10 o más días, marcar como pérdida
-        if (diasTranscurridos >= diasPerdida) {
+        // Si pasó de 10 días, marcar como pérdida
+        if (diasTranscurridos > diasPerdida) {
           updatePromises.push(
             docSnap.ref.update({
               estado: 'Pérdida',

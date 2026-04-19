@@ -45,9 +45,13 @@ class VentasService {
         throw new Error(`Cantidad insuficiente. Disponible: ${cantidadDisponible.toFixed(2)} kg`)
       }
 
+      const fechaVentaTimestamp = Timestamp.now()
+      const fechaVentaISO = datosVenta.fechaVenta || fechaVentaTimestamp.toDate().toISOString()
+
       const docRef = await addDoc(collection(this.db, this.collectionName), {
         ...datosVenta,
-        fechaVentaTimestamp: Timestamp.now(),
+        fechaVenta: fechaVentaISO,
+        fechaVentaTimestamp,
         activo: true,
         marcaEliminar: false,
       })
@@ -60,6 +64,9 @@ class VentasService {
           cantidadVendida: nuevaCantidadVendida,
           estado: 'Agotado',
           marcaEliminar: true,
+          fechaUltimaVenta: fechaVentaISO,
+          fechaUltimaVentaTimestamp: fechaVentaTimestamp,
+          fechaSalidaInventario: fechaVentaISO,
         })
 
         console.log('OK Venta registrada y lote eliminado:', docRef.id)
@@ -67,6 +74,8 @@ class VentasService {
         await updateDoc(loteRef, {
           cantidadVendida: nuevaCantidadVendida,
           estado: loteData.estado,
+          fechaUltimaVenta: fechaVentaISO,
+          fechaUltimaVentaTimestamp: fechaVentaTimestamp,
         })
 
         console.log('OK Venta registrada y inventario sincronizado:', docRef.id)
