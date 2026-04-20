@@ -33,7 +33,7 @@ const CLIENT_ORIGINS = (process.env.CLIENT_ORIGIN || DEFAULT_CLIENT_ORIGINS.join
   .map((origin) => origin.trim())
   .filter(Boolean)
 
-app.use(cors({
+const corsOptions = {
   origin(origin, callback) {
     if (!origin || CLIENT_ORIGINS.includes(origin)) {
       callback(null, true)
@@ -42,7 +42,10 @@ app.use(cors({
 
     callback(new Error(`Origen no permitido por CORS: ${origin}`))
   }
-}))
+}
+
+app.use(cors(corsOptions))
+app.options('*', cors(corsOptions))
 app.use(express.json({ limit: '20mb' }))
 
 const MAX_CERTIFICADO_SIZE_BYTES = 10 * 1024 * 1024
