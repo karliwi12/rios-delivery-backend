@@ -113,6 +113,15 @@ const resolveServiceAccountPath = (serviceAccountPath) => {
 }
 
 const getServiceAccountCredentials = () => {
+  const renderCredentials = parseServiceAccountJson(
+    process.env.FIREBASE_SERVICE_ACCOUNT,
+    'FIREBASE_SERVICE_ACCOUNT'
+  )
+  if (renderCredentials) {
+    console.log('Firebase Admin SDK usara FIREBASE_SERVICE_ACCOUNT')
+    return renderCredentials
+  }
+
   const jsonCredentials = parseServiceAccountJson(
     process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
     'FIREBASE_SERVICE_ACCOUNT_JSON'
@@ -283,7 +292,7 @@ function initializeFirebaseAdmin() {
 
     const serviceAccount = getServiceAccountCredentials()
     if (!serviceAccount) {
-      throw new Error('No se encontro una credencial Firebase Admin. Define FIREBASE_SERVICE_ACCOUNT_PATH, FIREBASE_SERVICE_ACCOUNT_JSON o GOOGLE_SERVICE_ACCOUNT_JSON.')
+      throw new Error('No se encontro una credencial Firebase Admin. Define FIREBASE_SERVICE_ACCOUNT, FIREBASE_SERVICE_ACCOUNT_PATH, FIREBASE_SERVICE_ACCOUNT_JSON o GOOGLE_SERVICE_ACCOUNT_JSON.')
     }
 
     admin.initializeApp({
@@ -306,6 +315,10 @@ const firebaseDb = initializeFirebaseAdmin()
 const inventarioService = new InventarioService(firebaseDb)
 const ventasService = new VentasService(firebaseDb)
 const historialService = new HistorialService(firebaseDb)
+
+app.get('/', (_req, res) => {
+  res.send('Backend funcionando')
+})
 
 app.get('/api/inventario', async (req, res) => {
   try {
