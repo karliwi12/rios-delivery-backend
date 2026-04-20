@@ -23,8 +23,10 @@ const app = express()
 const PORT = Number(process.env.PORT || 3001)
 const DEFAULT_CLIENT_ORIGINS = [
   'http://localhost:5173',
-  'https://rios-delivery.web.app',
-  'https://rios-delivery.firebaseapp.com',
+  'http://localhost:5000',
+  'http://127.0.0.1:5000',
+  'https://rios-delivery-v2.web.app',
+  'https://rios-delivery-v2.firebaseapp.com',
 ]
 const CLIENT_ORIGINS = (process.env.CLIENT_ORIGIN || DEFAULT_CLIENT_ORIGINS.join(','))
   .split(',')
@@ -118,6 +120,15 @@ const getServiceAccountCredentials = () => {
   if (jsonCredentials) {
     console.log('Firebase Admin SDK usará FIREBASE_SERVICE_ACCOUNT_JSON')
     return jsonCredentials
+  }
+
+  const googleJsonCredentials = parseServiceAccountJson(
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON,
+    'GOOGLE_SERVICE_ACCOUNT_JSON'
+  )
+  if (googleJsonCredentials) {
+    console.log('Firebase Admin SDK usara GOOGLE_SERVICE_ACCOUNT_JSON')
+    return googleJsonCredentials
   }
 
   if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
@@ -270,18 +281,18 @@ function initializeFirebaseAdmin() {
       return admin.firestore()
     }
 
-    console.log('ENV GOOGLE_SERVICE_ACCOUNT_JSON:', process.env.GOOGLE_SERVICE_ACCOUNT_JSON ? 'EXISTE' : 'NO EXISTE')
-    console.log('Longitud JSON:', process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.length)
-    
-    const serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON)
+    const serviceAccount = getServiceAccountCredentials()
+    if (!serviceAccount) {
+      throw new Error('No se encontro una credencial Firebase Admin. Define FIREBASE_SERVICE_ACCOUNT_PATH, FIREBASE_SERVICE_ACCOUNT_JSON o GOOGLE_SERVICE_ACCOUNT_JSON.')
+    }
 
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
-      projectId: serviceAccount.project_id,
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET
+      projectId: serviceAccount.project_id || firebaseConfig.projectId,
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket,
     })
 
-    console.log('🔥 Firebase Admin inicializado con credenciales de Render')
+    console.log(`Firebase Admin inicializado en proyecto ${serviceAccount.project_id || firebaseConfig.projectId}`)
     return admin.firestore()
   } catch (error) {
     console.error('✗ Error inicializando Firebase Admin SDK:', error.message)
